@@ -102,37 +102,43 @@ def boxAv(x, boxSize):
 
 	return binAv
 
-def gammaChiSquared(n, bins):
-	"""Calculates the chi^2 test statistic and p value against a gamma(1/2,2) distribution
+def gammaChiSquared(n, bins, dispopt=False):
+	"""Calculates the chi^2 test statistic and p value against a gamma(1/2,2) distribution, assuming 2 constraints.
+	If using to test diffusision, as per Vestergaard, use [n, bins] = np.histogram(Pxk/np.mean(Pxk), ..., density=False)
+	DELETE:In general, n should be pdf values (np.sum(n*np.diff(bins)[0]) = 1)
 	
 	Keyword arguments:
-	n -- pdf values of a histogram (as from pyplot.hist(x,N,normed=True)
+	n -- counts of a histogram (as from np.histogram(x,N)
 	bins -- bins locations
 
 	Returns:
-	p -- p value
 	X2 -- reduced chi^2 value
+	p -- p value
+	
 	"""
-	# Useful for testing free diffusion
-	# input n should be a pdf from plt.hist(... normed=True) such that sum(n*binwidth) = 1
-	#
-	grain = 1000.
+	N = np.sum(n)
 	binwidth = np.diff(bins)[0]
+	binCenters = bins[0:-1]+0.5*binwidth
+	Gamma = scipy.stats.gamma(0.5, scale=2)
+	cdf = Gamma.cdf(bins)
+	Dcdf = np.diff(cdf)
+	expected = N*Dcdf
+	#vals = Gamma.rvs(100000)
+	#[expected, bb] = np.histogram(vals, bins, density=True)
+	#expected = N*Gamma.pdf(binCenters)
+        #expected = expected*N/100000
+
+	observed = n
+
+	if dispopt:
+		plt.bar(bins[0:-1],observed,binwidth)
+		plt.plot(binwidth/2 + bins[0:-1],expected,'r', lw=5)
+	else:
+		pass
     
-	bins2 = binwidth/grain*(1+np.arange(0,grain*n.size))
-    
-	temp = scipy.stats.gamma.pdf(bins2,0.5, scale=2)
-	temp = np.reshape(temp,(n.size,grain))*binwidth/grain
-	expected = np.reshape(np.sum(temp,1),(n.size))
-        
-	observed = n*binwidth
-	plt.bar(bins[0:-1],observed,binwidth)
-	plt.plot(binwidth/2 + bins[0:-1],expected,'r', lw=5)
-    
-	p, X2 = scipy.stats.chisquare(observed, expected, 0)
-	#temp = (observed - expected)**2/expected
-	#X2 = np.sum(temp)
-	return p, X2
+	X2, p = scipy.stats.chisquare(observed, expected, 2, 0)
+	X2 = X2/(len(observed)-3)
+	return X2, p
     
     
 def D2eta(D, R, T):
@@ -144,7 +150,7 @@ def D2eta(D, R, T):
 	T -- temperature in C
 
 	Returns:
-	eta: viscosity in Pa*s (divide by 1000 for Pa*s)
+	eta: viscosity in cP (multiply by 1000 for Pa*s)
 	"""
 	k = scipy.constants.k
 	T = scipy.constants.C2K(T)

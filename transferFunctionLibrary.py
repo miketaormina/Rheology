@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+import numpy.fft as fft
 
 pi = np.pi
 
@@ -24,14 +25,47 @@ def nan_helper(y):
 
 
 def newtonianfluid(x, a, tau):
+    """Functional form for the decay of amplitude with frequency of a angular driven onject in a Newtonian fluid.
+    """
     return a*np.sqrt(1/(1+(2*pi*x*tau)**2))
+
+def newtonianfluidphase(f, tau):
+    """Functional form of the phase difference between a driven oscilator and the driving field.
+
+    Inputs:
+	- x, frequencies over which to return deltaPhi
+	- tau, characteristic time tau = 1/omega*
+    Outputs:
+    	- deltaPhi, phase lag for a Newtonian fluid, for a given tau
+    """
+
+    return np.arctan(-(2*pi*f*tau))
 
 
 def fit_to_newtonian(F, A, p0=[20, 0.01]):
-    popt, pcov = curve_fit(newtonianfluid, F, A, p0)
+    """Fit amplitude of angular oscillation as a function of driving frequency to the theoretical behavior in a Newtonian Fluid. Non linear least squares is used through scipy.optimize.curvefit
+    """
+    try:
+	    popt, pcov = curve_fit(newtonianfluid, F, A, p0)
+    except RuntimeError:
+	    popt = np.array([np.nan, np.nan])
+	    pcov = np.nan
     return popt, pcov
 
+def fit_phase_to_newtonian(F, P, p0=[0.01]):
+    """Fit the phase lag of angular oscillator as a function of the driving frequency to the theoretical behavior in a Newtonian Fluid. Non linear least squres is used through scipy.optimize.curvefit
+    """
+    try:
+	popt, pcov = curve_fit(newtonianfluidphase, F, P, p0)
+    except RuntimeError:
+	popt = np.array([np.nan])
+	pcov = np.nan
+    return popt, pcov
+
+
 def correctedNewtonianFluid(x, a, tau):
+    """Obsolete - creates the amplitude decay of a Newtonian Fluid with corrections for an oscillator that deviates from the small angle approximation.
+    """
     i = np.complex(0,1)
     t = (x/x[0])**(1/(np.log(x[-1]/x[0])/np.log(30.)))
     #b = np.tan(a*pi/180)
@@ -42,19 +76,23 @@ def correctedNewtonianFluid(x, a, tau):
     #                  (0.5*bb*np.sin(2*omega*t))**2)/((1 + 0.5*np.cos(2*omega*t))**2 +
     #                                               (omega*tau +
     #                                                0.5*bb*np.sin(2*omega*t))**2))
-    return a*np.sqrt(((1 + 0.5*bb.real)**2 + (0.5*bb.imag)**2)/((1 +
-                                                                 0.5*bb.real)**2
-                                                                + (tau*omega +
-                                                                   0.5*bb.imag)**2))
+    return a*np.sqrt(((1 + 0.5*bb.real)**2 + (0.5*bb.imag)**2)/((1 + 0.5*bb.real)**2 + (tau*omega + 0.5*bb.imag)**2))
 
 def fit_to_corrected_newtonian(F, A, p0=[20, 0.01]):
+    """Obsolete - Fits to amplitude decay of a Newtonian Fluid with corrections for an oscillator that deviates from the small angle approximation.
+    """
     popt, pcov = curve_fit(correctedNewtonianFluid, F, A, p0)
     return popt, pcov
 
 def maxwellfluid(x, a, tau, c):
     return a*np.sqrt((1+(2*pi*x*tau)**2)/(1+(2*pi*x*tau)**2*(1+c)**2))
 
+def maxwellfluidphase(x, tau, c):
+	return (np.arctan(2*np.pi*x*tau) - np.arctan((1+c)*2*np.pi*x*tau))
+
 def fit_to_maxwell(F, A, p0=[20, 0.001, 10]):
+    """Fit amplitude of angular oscillation as a function of driving frequency to the theoretical behavior in a Maxwell Fluid. Non linear least squares is used through scipy.optimize.curvefit.
+    """
     popt, pcov = curve_fit(maxwellfluid, F, A , p0)
     return popt, pcov
 
@@ -74,11 +112,29 @@ def frameInfo(data):
 
 
 def reject_outliers(data, m=2):
+    """Function that rejects values more than a given amount from the mean.
+    Inputs:
+        - data, numpy array of data to be inspected.
+	- m[=2], multiple of the standard deviation above which data will be rejected.
+    """
     return data[abs(data - np.mean(data)) < m * np.std(data)]
 
 
 def construct_input(camSignal, magSignal, scopeTime, time, fInitial, fFinal,
                     sweepTime, holdTime, quadrant=0):
+    """Produces a remapped version of the input signal such that it is sampled at the same points as the measured response (from image frames).
+
+    Input:
+        - camSignal, 1D array of the camera's logical signal for commencement of acquisition. This comes from the signal captured on the oscilloscope.
+        - magSignal, 1D array of the voltage applied to the electromagnet. This is measured on the oscilloscope.
+        - scopeTime, 1D array of the time data from the oscilloscope measurements.
+        - time, 1D array of the measurement times (e.g. from the camera's timestamp).
+        - fInitial, starting frequency of the chirp.
+        - fFinal, ending frequency of the chirp.
+        - sweepTime, time in seconds over which the frequency is chirped.
+        - holdTime, time in seconds that the input signal remains at the final frequency at the end of the chirp.
+        - quadrant[=0], The function attempts to find the quadrant, or phase, of the input signal but sometimes gets it wrong. If this is required (incase phase information is being calculated), the actual quadrant can be deduced and input manually here.
+	    """
     fInitial = np.float(fInitial)
     fFinal = np.float(fFinal)
     sweepTime = np.float(sweepTime)

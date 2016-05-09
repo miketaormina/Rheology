@@ -55,30 +55,211 @@ def param2poly(filePath, fileName):
 	os.chdir(filePath)
 	param = scipy.io.loadmat(fileName)
 	
-	try:
-		poly = param['param']['regionExtent'][0][0]['polyAll'][0][0][0][0]
-	except (ValueError):
-		poly_exists = False
-	else:
-		poly_exists = True
-	imSize = param['param']['imSize'][0][0][0]
-	if(not poly_exists):
-		poly = np.array([0])
+#	try:
+	poly = param['param']['regionExtent'][0][0]['polyAll'][0][0][0][0]
+#	except (ValueError):
+#		poly_exists = False
+#	else:
+#		poly_exists = True
+#	imSize = param['param']['imSize'][0][0][0]
+	imSize = param['param']['regionExtent'][0][0][0][0][0][0][0][0]
+#	if(not poly_exists):
+#	poly = np.array([0])
 		
 	return [poly, imSize]
 
-def histOfStack(filePath,fileNameBase,mask):
+def histOfStack(filePath,fileNameBase,imRange,mask,histRange=5000):
 	os.chdir(filePath)
-	
+	if(type(mask) is not np.ndarray):
+		return
+
 	numIm = len([name for name in os.listdir('.') if (os.path.isfile(name) and ('.tif' in name))])
-	allData = np.array([])
-	for i in np.arange(numIm):
+
+	if(type(imRange) is not list):
+		imRange = [0,numIm]
+		print('Image range should be a list, I am proceeding with the entire stack...')
+	elif(imRange[1] > numIm - 1):
+		imRange[1] = numIm-1
+		print('imRange larger than number in directory, I am proceeding using the last image as upper limit...')
+		
+	allData = []
+	for i in np.arange(imRange[0],imRange[1]):
 		fileName = "%s%u%s" % (fileNameBase,i,'.tif')
 		im = mpimg.imread(fileName)
 		newim = im*mask
-		allData = np.append(allData,np.reshape(newim,(1,-1)))
+		allData.append(np.reshape(newim,(1,-1)))
 		
-	H = plt.hist(allData[allData!=0],100)
+	allData = np.array(allData)
+	allData = allData[allData!=0]
+	H = np.histogram(allData,100,range=(0,histRange))
+#	H = plt.hist(allData[allData!=0],100)
 	return H
+
+def showMaskedStack(filePath,fileNameBase,mask):
+#	plt.ion()
+	os.chdir(filePath)
+	if(type(mask) is not np.ndarray):
+		return
+
+	numIm = len([name for name in os.listdir('.') if (os.path.isfile(name) and ('.tif' in name))])
+	plt.figure(figsize=(8,8))
+	im = mpimg.imread('%s%u%s' % (fileNameBase,70,'.tif'))
+	newim = im*mask
+	imgplot = plt.imshow(newim)
+	imgplot.set_clim(0.,2000)
+	plt.draw()
+
+#	for i in np.arange(numIm):
+#		fileName = "%s%u%s" % (fileNameBase,i,'.tif')
+#		im = mpimg.imread(fileName)
+#		newim = im*mask
+#		plt.matshow(newim, fignum=False)
+		#imgplot.set_clim(0.0,4000)
+		#imgplot.set_data(newim)
+		#imgplot.draw()
+		
+		
+		
+	return
+
+
+
+def histOtsuValue(n):
+#	np.seterr(divide='ignore')
+
+	maxVar = 0.
+	#threshold = 0.
+	wB = 0.
+	wF = 1.
+	sumB = 0.
+	sumAll = np.sum(n*np.arange(n.size))
+	
+	for i in np.arange(n.size):
+		wB = wB + n[i]
+		wF = 1.-wB
+		if(wF == 0):
+			break
+
+		sumB = sumB + n[i]*i
+		if(wB==0):
+			muB = 0
+		else:
+			muB = np.divide(sumB,wB)
+	
+		muF = np.divide((sumAll-sumB),wF)
+
+		varBetween = wB*wF*(muB-muF)*(muB-muF)
+        
+		if(varBetween > maxVar):
+			maxVar = varBetween
+			threshold = i
+	return threshold
+
+def balanceHist(n):
+	"""find the index where 50% lies on either side, given a normalized PMF"""
+	sumB = 0.
+	threshold = 0
+
+	for i in np.arange(n.size):
+		sumB = sumB + n[i]
+		if(sumB > 0.5):
+			threshold = i-1
+			break
+	return threshold
+
+def histOfRatio(filePath1,filePath2,fileNameBase,imRange,mask,histRange=5000):
+	if(type(mask) is not np.ndarray):
+		return
+
+	os.chdir(filePath1)
+	numIm = len([name for name in os.listdir('.') if (os.path.isfile(name) and ('.tif' in name))])
+
+	if(type(imRange) is not list):
+		imRange = [0,numIm]
+		print('Image range should be a list, I am proceeding with the entire stack...')
+	elif(imRange[1] > numIm - 1):
+		imRange[1] = numIm-1
+		print('imRange larger than number in directory, I am proceeding using the last image as upper limit...')
+		
+	allData = []
+	for i in np.arange(imRange[0],imRange[1]):
+		fileName = "%s%u%s" % (fileNameBase,i,'.tif')
+		im = mpimg.imread(fileName)
+		newim = im*mask
+		allData.append(np.reshape(newim,(1,-1)))
+		
+	os.chdir(filePath2)
+	allData2 = []
+	for i in np.arange(imRange[0],imRange[1]):
+		fileName = "%s%u%s" % (fileNameBase,i,'.tif')
+		im = mpimg.imread(fileName)
+		newim = im*mask
+		allData2.append(np.reshape(newim,(1,-1)))
+
+	allData = np.array(allData, dtype='float')
+	allData2 = np.array(allData2, dtype='float')
+	allData = allData[allData!=0]
+	allData2 = allData2[allData2!=0]
+	ratio = np.divide(allData,allData2)
+	H = np.histogram(ratio,500,range=(0,histRange))
+#	H = plt.hist(allData[allData!=0],100)
+	return H
+
+class returnValues(object):
+	def __init__(counts, xedges, yedges):
+		self.counts = counts
+		self.xedges = xedges
+		self.yedges = yedges
+
+
+def hist2Dratio(filePath1, filePath2, fileNameBase, imRange, mask, range1=5000, range2=20):
+	np.seterr(divide='ignore')
+	if(type(mask) is not np.ndarray):
+		print('Mask is not np.ndarraY(?)')
+		return
+	
+	os.chdir(filePath1)
+	numIm = len([name for name in os.listdir('.') if (os.path.isfile(name) and ('.tif' in name))])
+
+	if(type(imRange) is not list):
+		imRange = [0,numIm]
+		print('Image range should be a list, I am proceeding with the entire stack...')
+	elif(imRange[1] > numIm - 1):
+		imRange[1] = numIm-1
+		print('imRange larger than number in directory, I am proceeding using the last image as upper limit...')
+
+	data1 = []
+	data2 = []
+	for i in np.arange(imRange[0],imRange[1]):
+		os.chdir(filePath1)
+		fileName = "%s%u%s" % (fileNameBase, i, '.tif')
+		im = mpimg.imread(fileName)
+		newIm = im*mask
+		data1.append(np.reshape(newIm,(1,-1)))
+
+		os.chdir(filePath2)
+		fileName = "%s%u%s" % (fileNameBase, i, '.tif')
+		im = mpimg.imread(fileName)
+		newIm = im*mask
+		data2.append(np.reshape(newIm,(1,-1)))
+
+	data1 = np.array(data1, dtype='float')
+	data2 = np.array(data2, dtype='float')
+	data1 = data1[data1 != 0]
+	data2 = data2[data2 != 0]
+	
+	ratio = np.divide(data1,data2)
+	
+	try:
+		H = plt.hist2d(data1, ratio, bins=[100,500], range=[[0, range1], [0, range2]], normed=True)
+	except(ValueError):
+		print('What the fuck?')
+		print(data1)
+		return
+
+	return H
+#	return returnValues(H[0], H[1], H[2])
+
+
 
 
